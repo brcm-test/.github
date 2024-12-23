@@ -47,25 +47,21 @@ jobs:
                 if grep -F -i -q "$lic" /tmp/license_head; then
                   echo "Found permissive license: $lic in $license_file"
                   run_cla="false"
-                  echo "run_cla=$run_cla" >> $GITHUB_ENV
                   break 2 # Exit both loops if a permissive license is found
                 fi
               done < <(echo "$PERMISSIVE_LICENSES")
-
-              if [[ "$run_cla" == "false" ]]; then
-                break # Exit outer loop if a permissive license was detected
-              fi
             fi
           done
+
+          echo "run_cla=$run_cla" >> $GITHUB_ENV
 
           if [[ "$run_cla" == "true" ]]; then
             echo "Non-permissive or no license found. CLA will be triggered."
           else
             echo "Permissive license found. CLA will be skipped."
-          fi
 
       - name: Call CLA Workflow
-        if: ${{ steps.check_license.outputs.run_cla == 'true' }}
+        if: steps.check_license.outputs.run_cla == 'true'
         uses: contributor-assistant/github-action@v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
