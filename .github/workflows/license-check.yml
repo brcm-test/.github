@@ -21,7 +21,8 @@ jobs:
       - name: Read Permissive Licenses from JSON
         id: read_licenses
         run: |
-          echo "licenses=$(jq -r '.permissive | @json' .github-org/permissive_licenses.json)" >> $GITHUB_ENV
+          jq -r '.permissive | @json' .github-org/permissive_licenses.json | tee /tmp/permissive_licenses.json
+          echo "licenses=$(cat /tmp/permissive_licenses.json)" >> $GITHUB_ENV
 
       - name: Check license
         id: check_license
