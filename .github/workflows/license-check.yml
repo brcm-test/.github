@@ -1,7 +1,7 @@
-name: "License Check and CLA Trigger"
+name: "License Check"
 
 on:
-  workflow_call: # This is essential for reusable workflows
+  workflow_call:
 
 jobs:
   check-and-trigger:
@@ -12,7 +12,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Checkout Org .github Repo #access the organization level .github repo
+      - name: Checkout Org .github Repo
         uses: actions/checkout@v3
         with:
           repository: ${{ github.repository_owner }}/.github
@@ -21,12 +21,12 @@ jobs:
       - name: Read Permissive Licenses from JSON
         id: read_licenses
         run: |
-          echo "::set-output name=licenses::$(jq -r '.permissive | @json' .github-org/permissive_licenses.json)"
+          echo "licenses=$(jq -r '.permissive | @json' .github-org/permissive_licenses.json)" >> $GITHUB_ENV
 
       - name: Check license
         id: check_license
         env:
-          PERMISSIVE_LICENSES: ${{ steps.read_licenses.outputs.licenses }}
+          PERMISSIVE_LICENSES: ${{ env.licenses }}
         run: |
           # Potential license file names
           license_filenames=("LICENSE" "LICENSE.txt" "LICENSE.md" "COPYING" "COPYING.txt" "COPYING.md")
@@ -40,18 +40,17 @@ jobs:
 
               # Read the first 20 lines of the file (adjust as needed)
               head -n 20 "$license_file" > /tmp/license_head
-              # Convert JSON string to an array
-              IFS=',' read -r -a permissive_licenses <<< "$PERMISSIVE_LICENSES"
-              # Check if any of the permissive licenses appear in those lines (case-insensitive)
-              for lic in "${permissive_licenses[@]}"; do
-                # Remove quotes and leading/trailing spaces from the license name
-                lic=$(echo "$lic" | tr -d '"' | xargs)
-                if grep -i -q "$lic" /tmp/license_head; then
+              
+              # Iterate over the permissive licenses
+              while IFS= read -r line; do
+                lic=$(echo "$line" | tr -d '"' | xargs)
+                if grep -F -i -q "$lic" /tmp/license_head; then
                   echo "Found permissive license: $lic in $license_file"
                   run_cla="false"
+                  echo "run_cla=$run_cla" >> $GITHUB_ENV
                   break 2 # Exit both loops if a permissive license is found
                 fi
-              done
+              done < <(echo "$PERMISSIVE_LICENSES")
 
               if [[ "$run_cla" == "false" ]]; then
                 break # Exit outer loop if a permissive license was detected
@@ -59,12 +58,20 @@ jobs:
             fi
           done
 
-          echo "::set-output name=run_cla::$run_cla"
           if [[ "$run_cla" == "true" ]]; then
             echo "Non-permissive or no license found. CLA will be triggered."
           else
             echo "Permissive license found. CLA will be skipped."
+          fi
 
       - name: Call CLA Workflow
         if: ${{ steps.check_license.outputs.run_cla == 'true' }}
-        uses: ./.github/workflows/cla-assistant-lite.yml
+        uses: contributor-assistant/github-action@v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-signatures: 'signatures/version1/cla.json'
+          path-to-document: 'https://github.com/cla-assistant/github-action/blob/master/SAPCLA.md'
+          # branch should not be protected
+          branch: 'main'
+          allowlist: user1,bot*
