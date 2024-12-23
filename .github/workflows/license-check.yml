@@ -21,8 +21,7 @@ jobs:
       - name: Read Permissive Licenses from JSON
         id: read_licenses
         run: |
-          jq -r '.permissive | @json' .github-org/permissive_licenses.json | tee /tmp/permissive_licenses.json
-          echo "licenses=$(cat /tmp/permissive_licenses.json)" >> $GITHUB_ENV
+          echo "licenses=$(jq -r '.permissive | join(",")' .github-org/permissive_licenses.json)" >> $GITHUB_ENV
 
       - name: Check license
         id: check_license
@@ -41,16 +40,16 @@ jobs:
 
               # Read the first 20 lines of the file (adjust as needed)
               head -n 20 "$license_file" > /tmp/license_head
-              
+
               # Iterate over the permissive licenses
-              while IFS= read -r line; do
-                lic=$(echo "$line" | tr -d '"' | xargs)
+              IFS=',' read -r -a licenses_array <<< "$PERMISSIVE_LICENSES"
+              for lic in "${licenses_array[@]}"; do
                 if grep -F -i -q "$lic" /tmp/license_head; then
                   echo "Found permissive license: $lic in $license_file"
                   run_cla="false"
                   break 2 # Exit both loops if a permissive license is found
                 fi
-              done < <(echo "$PERMISSIVE_LICENSES")
+              done
             fi
           done
 
