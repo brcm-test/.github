@@ -44,6 +44,7 @@ jobs:
               # Iterate over the permissive licenses
               IFS=',' read -r -a licenses_array <<< "$PERMISSIVE_LICENSES"
               for lic in "${licenses_array[@]}"; do
+                lic=$(echo "$lic" | tr -d '"' | xargs)
                 if grep -F -i -q "$lic" /tmp/license_head; then
                   echo "Found permissive license: $lic in $license_file"
                   run_cla="false"
