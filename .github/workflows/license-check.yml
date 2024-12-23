@@ -1,8 +1,7 @@
 name: "Basic Test Workflow"
 
 on:
-  pull_request:
-    types: [opened, synchronize]
+  workflow_call: # This is essential for reusable workflows
 
 jobs:
   test-job:
