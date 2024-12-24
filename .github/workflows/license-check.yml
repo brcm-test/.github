@@ -14,6 +14,7 @@ on:
     types: [created]
 
 jobs:
+
   check-and-trigger:
     # Only run on pull requests or comments
     if: |
@@ -97,103 +98,6 @@ jobs:
           branch: 'main'
           allowlist: user1,bot*
           name: "License Check"
-
-on:
-  workflow_call:
-    # Adding workflow inputs to make it reusable
-    inputs:
-      pull-request-target:
-        required: true
-        type: boolean
-        default: true
-  pull_request_target:
-    types: [opened, synchronize, closed]
-  issue_comment:
-    types: [created]
-
-jobs:
-  check-and-trigger:
-    # Only run on pull requests or comments
-    if: |
-      (github.event_name == 'pull_request_target' && inputs.pull-request-target) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request)
-    runs-on: ubuntu-latest
-    outputs:
-      run_cla_workflow: ${{ steps.check_license.outputs.run_cla }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          # Important for pull_request_target: checkout the base branch
-          ref: ${{ github.event.pull_request.base.sha }}
-
-      - name: Checkout Org .github Repo
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/.github
-          path: .github-org
-
-      - name: Check license
-        id: check_license
-        shell: bash
-        run: |
-          # Read licenses from organization's permissive_licenses.json
-          if [[ ! -f ".github-org/permissive_licenses.json" ]]; then
-            echo "Error: Required file permissive_licenses.json not found in organization's .github repository"
-            exit 1
-          fi
-          
-          # Get permissive licenses from JSON
-          permissive_licenses=$(jq -r '.permissive[]' ".github-org/permissive_licenses.json")
-          
-          if [[ $? -ne 0 ]]; then
-            echo "Error: Failed to parse permissive_licenses.json"
-            exit 1
-          fi
-          
-          # Find any license file
-          license_file=$(find . -maxdepth 1 -type f -iname 'license*' -o -iname 'copying*' | head -n 1)
-          
-          if [[ -n "$license_file" ]]; then
-            echo "Found license file: $license_file"
-
-            # Read the first 20 lines of the license file
-            license_content=$(head -n 20 "$license_file")
-
-            # Create a pattern that matches any of our permissive licenses
-            # We want exact matches, so we'll add word boundaries
-            pattern=$(jq -r '.permissive[]' ".github-org/permissive_licenses.json" | while read -r license; do 
-            echo "\b${license}\b"
-              done | paste -sd '|')
-
-            # Check for a match
-            if echo "$license_content" | grep -q -E "$pattern"; then
-              echo "Permissive license found"
-              echo "run_cla=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "No permissive license found"
-              echo "run_cla=true" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "run_cla=true" >> "$GITHUB_OUTPUT"
-            echo "No license file found. CLA will be triggered."
-          fi
-
-      - name: Call CLA Workflow
-        if: |
-          steps.check_license.outputs.run_cla == 'true' && 
-          (github.event_name == 'pull_request_target' || 
-           github.event.comment.body == 'recheck' || 
-           github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA')
-        uses: contributor-assistant/github-action@v2.6.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-        with:
-          path-to-signatures: 'signatures/version1/cla.json'
-          path-to-document: 'https://github.com/cla-assistant/github-action/blob/master/SAPCLA.md'
-          branch: 'main'
-          allowlist: user1,bot*
           # Optional parameters (default values will be used if not provided)
           # remote-organization-name: enter the remote organization name where the signatures should be stored (Default is storing the signatures in the same repository)
           # remote-repository-name: enter the remote repository name where the signatures should be stored (Default is storing the signatures in the same repository)
