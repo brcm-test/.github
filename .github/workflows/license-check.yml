@@ -10,56 +10,45 @@ jobs:
       run_cla_workflow: ${{ steps.check_license.outputs.run_cla }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # Updated to v4 for better performance
 
       - name: Checkout Org .github Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/.github
           path: .github-org
-
-      - name: Read Permissive Licenses from JSON
-        id: read_licenses
-        run: |
-          echo "licenses=$(jq -r '.permissive | join(",")' .github-org/permissive_licenses.json)" >> $GITHUB_ENV
+          sparse-checkout: |
+            permissive_licenses.json  # Only checkout the needed file
+          sparse-checkout-cone-mode: false
 
       - name: Check license
         id: check_license
-        env:
-          PERMISSIVE_LICENSES: ${{ env.licenses }}
+        shell: bash
         run: |
-          # Potential license file names
-          license_filenames=("LICENSE" "LICENSE.txt" "LICENSE.md" "COPYING" "COPYING.txt" "COPYING.md")
-
-          run_cla="true" # Default to running CLA
-
-          # Loop through potential license file names
-          for license_file in "${license_filenames[@]}"; do
-            if [[ -f "$license_file" ]]; then
-              echo "Found potential license file: $license_file"
-
-              # Read the first 20 lines of the file (adjust as needed)
-              head -n 20 "$license_file" > /tmp/license_head
-
-              # Iterate over the permissive licenses
-              IFS=',' read -r -a licenses_array <<< "$PERMISSIVE_LICENSES"
-              for lic in "${licenses_array[@]}"; do
-                lic=$(echo "$lic" | tr -d '"' | xargs)
-                if grep -F -i -q "$lic" /tmp/license_head; then
-                  echo "Found permissive license: $lic in $license_file"
-                  run_cla="false"
-                  break 2 # Exit both loops if a permissive license is found
-                fi
-              done
+          # Find any license file using a single find command
+          license_file=$(find . -maxdepth 1 -type f -iname 'license*' -o -iname 'copying*' | head -n 1)
+          
+          if [[ -n "$license_file" ]]; then
+            echo "Found license file: $license_file"
+            
+            # Read licenses directly from JSON and process in a single command
+            permissive_licenses=$(jq -r '.permissive[]' .github-org/permissive_licenses.json)
+            
+            # Create pattern for grep to search all licenses at once
+            pattern=$(echo "$permissive_licenses" | paste -sd '|')
+            
+            # Check for any permissive license in first 20 lines using a single grep
+            if head -n 20 "$license_file" | grep -q -i -E "$pattern"; then
+              echo "run_cla=false" >> "$GITHUB_OUTPUT"
+              echo "Permissive license found. CLA will be skipped."
+            else
+              echo "run_cla=true" >> "$GITHUB_OUTPUT"
+              echo "Non-permissive license found. CLA will be triggered."
             fi
-          done
-
-          echo "run_cla=$run_cla" >> $GITHUB_ENV
-
-          if [[ "$run_cla" == "true" ]]; then
-            echo "Non-permissive or no license found. CLA will be triggered."
           else
-            echo "Permissive license found. CLA will be skipped."
+            echo "run_cla=true" >> "$GITHUB_OUTPUT"
+            echo "No license file found. CLA will be triggered."
+          fi
 
       - name: Call CLA Workflow
         if: steps.check_license.outputs.run_cla == 'true'
@@ -69,6 +58,5 @@ jobs:
         with:
           path-to-signatures: 'signatures/version1/cla.json'
           path-to-document: 'https://github.com/cla-assistant/github-action/blob/master/SAPCLA.md'
-          # branch should not be protected
           branch: 'main'
           allowlist: user1,bot*
