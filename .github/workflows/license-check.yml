@@ -10,34 +10,42 @@ jobs:
       run_cla_workflow: ${{ steps.check_license.outputs.run_cla }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # Updated to v4 for better performance
+        uses: actions/checkout@v4
 
       - name: Checkout Org .github Repo
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/.github
           path: .github-org
-          sparse-checkout: |
-            permissive_licenses.json  # Only checkout the needed file
-          sparse-checkout-cone-mode: false
 
       - name: Check license
         id: check_license
         shell: bash
         run: |
-          # Find any license file using a single find command
+          # Read licenses from organization's permissive_licenses.json
+          if [[ ! -f ".github-org/permissive_licenses.json" ]]; then
+            echo "Error: Required file permissive_licenses.json not found in organization's .github repository"
+            exit 1
+          fi
+          
+          # Get permissive licenses from JSON
+          permissive_licenses=$(jq -r '.permissive[]' ".github-org/permissive_licenses.json")
+          
+          if [[ $? -ne 0 ]]; then
+            echo "Error: Failed to parse permissive_licenses.json"
+            exit 1
+          fi
+          
+          # Find any license file
           license_file=$(find . -maxdepth 1 -type f -iname 'license*' -o -iname 'copying*' | head -n 1)
           
           if [[ -n "$license_file" ]]; then
             echo "Found license file: $license_file"
             
-            # Read licenses directly from JSON and process in a single command
-            permissive_licenses=$(jq -r '.permissive[]' .github-org/permissive_licenses.json)
-            
-            # Create pattern for grep to search all licenses at once
+            # Create pattern for grep
             pattern=$(echo "$permissive_licenses" | paste -sd '|')
             
-            # Check for any permissive license in first 20 lines using a single grep
+            # Check for any permissive license in first 20 lines
             if head -n 20 "$license_file" | grep -q -i -E "$pattern"; then
               echo "run_cla=false" >> "$GITHUB_OUTPUT"
               echo "Permissive license found. CLA will be skipped."
