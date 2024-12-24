@@ -41,7 +41,25 @@ jobs:
           
           if [[ -n "$license_file" ]]; then
             echo "Found license file: $license_file"
-            
+
+            # Read the first 20 lines of the license file
+            license_content=$(head -n 20 "$license_file")
+
+            # Create a pattern that matches any of our permissive licenses
+            # We want exact matches, so we'll add word boundaries
+            pattern=$(jq -r '.permissive[]' ".github-org/permissive_licenses.json" | while read -r license; do 
+            echo "\b${license}\b"
+              done | paste -sd '|')
+
+            # Check for a match
+            if echo "$license_content" | grep -q -E "$pattern"; then
+              echo "Permissive license found"
+              echo "run_cla=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "No permissive license found"
+              echo "run_cla=true" >> "$GITHUB_OUTPUT"
+            fi
+
             # Create pattern for grep
             pattern=$(echo "$permissive_licenses" | paste -sd '|')
             
