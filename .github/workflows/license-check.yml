@@ -63,7 +63,13 @@ jobs:
             echo "run_cla=true" >> "$GITHUB_OUTPUT"
             echo "No license file found. CLA will be triggered."
           fi
-
+          
+      - name: Debug Variables
+        run: |
+          echo "run_cla: ${{ steps.check_license.outputs.run_cla }}"
+          echo "event_name: ${{ github.event_name }}"
+          echo "comment_body: ${{ github.event.comment.body }}"
+          
       - name: Call CLA Workflow
         if: |
           steps.check_license.outputs.run_cla == 'true' && 
