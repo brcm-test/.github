@@ -20,6 +20,7 @@ jobs:
     if: |
       (github.event_name == 'pull_request_target' && inputs.pull-request-target) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+      echo "event_name: $github.event_name"
     runs-on: ubuntu-latest
     outputs:
       run_cla_workflow: ${{ steps.check_license.outputs.run_cla }}
