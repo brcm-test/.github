@@ -2,7 +2,6 @@ name: "License Check"
 
 on:
   workflow_call:
-    # Adding workflow inputs to make it reusable
     inputs:
       pull-request-target:
         required: true
@@ -14,81 +13,73 @@ on:
     types: [created]
 
 jobs:
-
   check-and-trigger:
-    # Only run on pull requests or comments
     if: |
       (github.event_name == 'pull_request_target' && inputs.pull-request-target) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request)
     runs-on: ubuntu-latest
-    outputs:
-      run_cla_workflow: ${{ steps.check_license.outputs.run_cla }}
     steps:
+      - name: Initialize workflow state
+        id: init
+        run: |
+          # Set event type flag
+          echo "is_comment=${{ github.event_name == 'issue_comment' }}" >> "$GITHUB_OUTPUT"
+          
+          # For comments, check if it's a CLA-related command
+          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+            comment="${{ github.event.comment.body }}"
+            if [[ "$comment" == "recheck" || "$comment" == "I have read the CLA Document and I hereby sign the CLA" ]]; then
+              echo "is_cla_command=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "is_cla_command=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # Only run license checks for pull request events
       - name: Checkout code
+        if: steps.init.outputs.is_comment != 'true'
         uses: actions/checkout@v4
         with:
-          # Important for pull_request_target: checkout the base branch
           ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Checkout Org .github Repo
+        if: steps.init.outputs.is_comment != 'true'
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/.github
           path: .github-org
 
       - name: Check license
-        id: check_license
-        shell: bash
+        if: steps.init.outputs.is_comment != 'true'
+        id: license_check
         run: |
-          # Read licenses from organization's permissive_licenses.json
           if [[ ! -f ".github-org/permissive_licenses.json" ]]; then
-            echo "Error: Required file permissive_licenses.json not found in organization's .github repository"
+            echo "Error: Required file permissive_licenses.json not found"
             exit 1
           fi
-          echo "event_name: $github.event_name"
 
-          # Get permissive licenses from JSON
-          permissive_licenses=$(jq -r '.permissive[]' ".github-org/permissive_licenses.json")
-          
-          if [[ $? -ne 0 ]]; then
-            echo "Error: Failed to parse permissive_licenses.json"
-            exit 1
-          fi
-          
-          # Find any license file
           license_file=$(find . -maxdepth 1 -type f -iname 'license*' -o -iname 'copying*' | head -n 1)
-          
           if [[ -n "$license_file" ]]; then
             echo "Found license file: $license_file"
-
-            # Read the first 20 lines of the license file
-            license_content=$(head -n 20 "$license_file")
-
-            # Create a pattern that matches any of our permissive licenses
-            # We want exact matches, so we'll add word boundaries
+            
             pattern=$(jq -r '.permissive[]' ".github-org/permissive_licenses.json" | while read -r license; do 
-            echo "\b${license}\b"
-              done | paste -sd '|')
-
-            # Check for a match
-            if echo "$license_content" | grep -q -E "$pattern"; then
-              echo "Permissive license found"
-              echo "run_cla=false" >> "$GITHUB_OUTPUT"
+              echo "\b${license}\b"
+            done | paste -sd '|')
+            
+            if head -n 20 "$license_file" | grep -q -E "$pattern"; then
+              echo "needs_cla=false" >> "$GITHUB_OUTPUT"
             else
-              echo "No permissive license found"
-              echo "run_cla=true" >> "$GITHUB_OUTPUT"
+              echo "needs_cla=true" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "run_cla=true" >> "$GITHUB_OUTPUT"
-            echo "No license file found. CLA will be triggered."
+            echo "No license file found"
+            echo "needs_cla=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Call CLA Workflow
         if: |
-          steps.check_license.outputs.run_cla == 'true' && 
-          (github.event_name == 'pull_request_target' || 
-           github.event.comment.body == 'recheck' || 
-           github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA')
+          (steps.init.outputs.is_comment == 'true' && steps.init.outputs.is_cla_command == 'true') ||
+          (steps.init.outputs.is_comment != 'true' && steps.license_check.outputs.needs_cla == 'true')
         uses: contributor-assistant/github-action@v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,17 +90,7 @@ jobs:
           branch: 'main'
           allowlist: user1,bot*
           name: "License Check"
-      # the followings are the optional inputs - If the optional inputs are not given, then default values will be taken
-          #remote-organization-name: enter the remote organization name where the signatures should be stored (Default is storing the signatures in the same repository)
-          #remote-organization-name: brcm-test
-          #remote-repository-name: enter the  remote repository name where the signatures should be stored (Default is storing the signatures in the same repository)
           remote-repository-name: .github
-          #create-file-commit-message: 'For example: Creating file for storing CLA Signatures'
           signed-commit-message: '${{ github.actor }} has signed the CLA in ${{ github.repository_owner }}/${{ github.repository }}#${{ github.event.pull_request }}'
-          #custom-notsigned-prcomment: 'pull request comment with Introductory message to ask new contributors to sign'
           custom-notsigned-prcomment: 'All non-permissive licensed projects require a signed CLA--please read and sign our CLA: $pathToCLADocument'
-          #custom-pr-sign-comment: 'The signature to be committed in order to sign the CLA'
           custom-pr-sign-comment: '${{ github.event.pull_request.user.login }} have read the Developer Terms Document and I hereby accept the Terms'
-          #custom-allsigned-prcomment: 'pull request comment when all contributors has signed, defaults to **CLA Assistant Lite bot** All Contributors have signed the CLA.'
-          #lock-pullrequest-aftermerge: false - if you don't want this bot to automatically lock the pull request after merging (default - true)
-          #use-dco-flag: true - If you are using DCO instead of CLA
