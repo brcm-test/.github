@@ -95,7 +95,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repo: ${{github.repository}}
           contributorName: ${{github.actor }}
-          pullRequestNo: ${{github.event .pull_request }}
+          pullRequestNo: ${{github.event.pull_request }}
         with:
           path-to-signatures: 'signatures/version1/cla.json'
           path-to-document: 'https://github.com/cla-assistant/github-action/blob/master/SAPCLA.md'
