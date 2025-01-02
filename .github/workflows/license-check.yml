@@ -7,16 +7,15 @@ on:
         required: true
         type: boolean
         default: true
-  pull_request_target:
-    types: [opened, synchronize, closed]
-  issue_comment:
-    types: [created]
-
+      issue-comment:
+        required: true
+        type: boolean
+        default: true  
 jobs:
   check-and-trigger:
     if: |
       (github.event_name == 'pull_request_target' && inputs.pull-request-target) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && inputs.issue-comment)
     runs-on: ubuntu-latest
     steps:
       - name: Debug Event Context
@@ -24,6 +23,7 @@ jobs:
           echo "Event name: ${{ github.event_name }}"
           echo "Event path: ${{ github.event_path }}"
           echo "Pull request target input: ${{ inputs.pull-request-target }}"
+          echo "Issue comment input: ${{ inputs.issue-comment }}"
           if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             echo "Comment body: ${{ github.event.comment.body }}"
             echo "Has PR: ${{ github.event.issue.pull_request != '' }}"
