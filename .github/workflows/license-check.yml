@@ -10,7 +10,8 @@ on:
       issue-comment:
         required: true
         type: boolean
-        default: true  
+        default: true
+
 jobs:
   check-and-trigger:
     if: |
@@ -21,143 +22,66 @@ jobs:
       - name: Debug Event Context
         run: |
           echo "Event name: ${{ github.event_name }}"
-          echo "Event path: ${{ github.event_path }}"
           echo "Pull request target input: ${{ inputs.pull-request-target }}"
           echo "Issue comment input: ${{ inputs.issue-comment }}"
           if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             echo "Comment body: ${{ github.event.comment.body }}"
-            echo "Has PR: ${{ github.event.issue.pull_request != '' }}"
-          fi
-          if [[ "${{ github.event_name }}" == "pull_request_target" ]]; then
-            echo "PR number: ${{ github.event.pull_request.number }}"
-            echo "PR base SHA: ${{ github.event.pull_request.base.sha }}"
           fi
 
       - name: Initialize workflow state
         id: init
         run: |
-          # Debug current state
-          echo "Debug: Starting initialization"
-          echo "Event type: ${{ github.event_name }}"
-          
-          # Set event type flag
           is_comment="${{ github.event_name == 'issue_comment' }}"
-          echo "Debug: is_comment=$is_comment"
           echo "is_comment=$is_comment" >> "$GITHUB_OUTPUT"
-          
-          # For comments, check if it's a CLA-related command
-          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+
+          if [[ "$is_comment" == "true" ]]; then
             comment="${{ github.event.comment.body }}"
-            echo "Debug: Comment body: $comment"
-            
             if [[ "$comment" == "recheck" || "$comment" == "I have read the CLA Document and I hereby sign the CLA" ]]; then
-              echo "Debug: Valid CLA command detected"
               echo "is_cla_command=true" >> "$GITHUB_OUTPUT"
             else
-              echo "Debug: Not a CLA command"
               echo "is_cla_command=false" >> "$GITHUB_OUTPUT"
             fi
           fi
-          
-          # Print all outputs for verification
-          echo "Debug: Final outputs:"
-          cat "$GITHUB_OUTPUT"
 
-      - name: Test initialization outputs
-        run: |
-          echo "Testing init outputs:"
-          echo "is_comment: ${{ steps.init.outputs.is_comment }}"
-          echo "is_cla_command: ${{ steps.init.outputs.is_cla_command }}"
-
-      # Only run license checks for pull request events
-      - name: Checkout code
-        if: steps.init.outputs.is_comment != 'true'
+      - name: Checkout code (for pull requests)
+        if: steps.init.outputs.is_comment != 'true'  # Treat as string
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
-          
-      - name: Verify checkout
-        if: steps.init.outputs.is_comment != 'true'
-        run: |
-          echo "Current directory contents:"
-          ls -la
-          echo "Git status:"
-          git status
 
-      - name: Checkout Org .github Repo
-        if: steps.init.outputs.is_comment != 'true'
+      - name: Checkout Org .github Repo (for pull requests)
+        if: steps.init.outputs.is_comment != 'true'  # Treat as string
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/.github
           path: .github-org
-          
-      - name: Verify org repo checkout
-        if: steps.init.outputs.is_comment != 'true'
-        run: |
-          echo "Org .github repo contents:"
-          ls -la .github-org
-          echo "Checking for permissive_licenses.json:"
-          test -f .github-org/permissive_licenses.json && echo "File exists" || echo "File not found"
 
-      - name: Check license
-        if: steps.init.outputs.is_comment != 'true'
+      - name: Check license (for pull requests)
+        if: steps.init.outputs.is_comment != 'true'  # Treat as string
         id: license_check
         run: |
-          echo "Debug: Starting license check"
-          
           if [[ ! -f ".github-org/permissive_licenses.json" ]]; then
             echo "Error: Required file permissive_licenses.json not found"
-            echo "Directory contents:"
-            ls -la .github-org/
             exit 1
           fi
 
-          echo "Debug: Reading permissive_licenses.json"
-          cat .github-org/permissive_licenses.json
-          
-          echo "Debug: Searching for license file"
           license_file=$(find . -maxdepth 1 -type f -iname 'license*' -o -iname 'copying*' | head -n 1)
-          echo "Debug: Found license file: $license_file"
-          
           if [[ -n "$license_file" ]]; then
-            echo "Debug: License file contents (first 20 lines):"
-            head -n 20 "$license_file"
-            
-            echo "Debug: Creating pattern from permissive licenses"
             pattern=$(jq -r '.permissive[]' ".github-org/permissive_licenses.json" | while read -r license; do 
               echo "\b${license}\b"
             done | paste -sd '|')
-            echo "Debug: Pattern: $pattern"
-            
             if head -n 20 "$license_file" | grep -q -E "$pattern"; then
-              echo "Debug: Permissive license found"
               echo "needs_cla=false" >> "$GITHUB_OUTPUT"
             else
-              echo "Debug: No permissive license found"
               echo "needs_cla=true" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "Debug: No license file found"
             echo "needs_cla=true" >> "$GITHUB_OUTPUT"
           fi
-          
-          echo "Debug: Final license check outputs:"
-          cat "$GITHUB_OUTPUT"
-
-      - name: Test license check outputs
-        if: steps.init.outputs.is_comment != 'true'
-        run: |
-          echo "Testing license check outputs:"
-          echo "needs_cla: ${{ steps.license_check.outputs.needs_cla }}"
 
       - name: Evaluate CLA conditions
         id: cla_eval
         run: |
-          echo "Debug: Evaluating CLA conditions"
-          echo "is_comment: ${{ steps.init.outputs.is_comment }}"
-          echo "is_cla_command: ${{ steps.init.outputs.is_cla_command }}"
-          echo "needs_cla: ${{ steps.license_check.outputs.needs_cla }}"
-          
           should_run_cla="false"
           if [[ "${{ steps.init.outputs.is_comment }}" == "true" && "${{ steps.init.outputs.is_cla_command }}" == "true" ]]; then
             echo "Debug: Should run CLA due to valid comment command"
@@ -166,11 +90,10 @@ jobs:
             echo "Debug: Should run CLA due to license check"
             should_run_cla="true"
           fi
-          
           echo "should_run_cla=$should_run_cla" >> "$GITHUB_OUTPUT"
 
       - name: Call CLA Workflow
-        if: steps.cla_eval.outputs.should_run_cla == 'true'
+        if: steps.cla_eval.outputs.should_run_cla == 'true'  # Treat as string
         uses: contributor-assistant/github-action@v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
